@@ -1,2 +1,3 @@
-# simulasi_bus_lks_jateng
-simulasi rute bus menggunakan stm32 pada ujicoba lks jateng 2023
+### Simulasi Trans Jateng
+
+contoh kasus simulasi tracking bus "trans jateng" menggunakan stm32
