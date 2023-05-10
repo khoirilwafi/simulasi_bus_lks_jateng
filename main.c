@@ -81,8 +81,12 @@ static char* status[2] = {
 
 // data check poin berisi status dan halte selanjutnya untuk setiap check point
 static const uint8_t check_point[2][16][2] = {
-	{{1,8},{1,7},{0,6},{0,6},{1,6},{0,5},{1,5},{0,4},{1,4},{0,3},{1,3},{1,2},{0,1},{1,1},{0,0},{1,0}},
-	{{1,0},{0,1},{1,1},{0,2},{1,2},{1,3},{0,4},{1,4},{0,5},{1,5},{0,6},{1,6},{0,7},{0,7},{1,7},{1,8}}
+	{
+			{1,8},{1,7},{0,6},{0,6},{1,6},{0,5},{1,5},{0,4},{1,4},{0,3},{1,3},{1,2},{0,1},{1,1},{0,0},{1,0}
+	},
+	{
+			{1,0},{0,1},{1,1},{0,2},{1,2},{1,3},{0,4},{1,4},{0,5},{1,5},{0,6},{1,6},{0,7},{0,7},{1,7},{1,8}
+	}
 };
 
 
@@ -183,8 +187,10 @@ int main(void)
   Lcd_create(lcd_port, lcd_pin, LCD_RS_GPIO_Port, LCD_RS_Pin, LCD_EN_GPIO_Port, LCD_EN_Pin, LCD_4_BIT_MODE);
   Register_create(CLK_GPIO_Port, CLK_Pin, DATA_GPIO_Port, DATA_Pin, LATCH_GPIO_Port, LATCH_Pin);
 
+  // nyalakan backlight lcd
   HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin, GPIO_PIN_SET);
 
+  // tanda test program
   if(HAL_GPIO_ReadPin(SW5_GPIO_Port, SW5_Pin) == GPIO_PIN_RESET)
   {
 	  Lcd_cursor(0, 0);
@@ -197,6 +203,7 @@ int main(void)
 	  while(1);
   }
 
+  // splash screen
   Lcd_cursor(0, 3);
   Lcd_string("SELAMAT DATANG");
   Lcd_cursor(2, 4);
@@ -204,12 +211,14 @@ int main(void)
   Lcd_cursor(3, 1);
   Lcd_string("SIAP MELAYANI ANDA");
 
+  // seting posisi bus
   set_bus_position(0, 0);
 
+  // tunggu 3 detik
   HAL_Delay(3000);
   Lcd_clear();
 
-  // initial data value
+  // ambil nilai awal untuk setiap tick
   bus_a_last_tick = HAL_GetTick();
   bus_b_last_tick = HAL_GetTick();
   waiting_blink_last_tick = HAL_GetTick();
@@ -221,11 +230,13 @@ int main(void)
   while (1)
   {
 
-	  // refresh screen if data change
+	  // refresh layar setiap ada perintah
 	  if(screen_refresh == true)
 	  {
+		  // bersihkan layar
 		  Lcd_clear();
 
+		  // tampilkan layar menurut screen yang aktif
 		  switch (page_now)
 		  {
 		  	  case 0 :
@@ -241,15 +252,18 @@ int main(void)
 		  	  break;
 		  }
 
+		  // disable refresh layar
 		  screen_refresh = false;
 	  }
 
 
-	  // task for blink waiting status
+	  // led blink jika ada penumpang menunggu
 	  if(is_waiting == true)
 	  {
+		  // matikan led merah
 		  HAL_GPIO_WritePin(LED_33_RED_GPIO_Port, LED_33_RED_Pin, GPIO_PIN_SET);
 
+		  // toggle led hijau setiap 500ms
 		  if(HAL_GetTick() - waiting_blink_last_tick >= 500)
 		  {
 			  HAL_GPIO_TogglePin(LED_33_GREEN_GPIO_Port, LED_33_GREEN_Pin);
@@ -258,11 +272,12 @@ int main(void)
 	  }
 	  else
 	  {
+		  // nyalakan led merah
 		  HAL_GPIO_WritePin(LED_33_RED_GPIO_Port, LED_33_RED_Pin, GPIO_PIN_RESET);
 	  }
 
 
-	  // notification bus is here
+	  // notifikasi bus telah tiba. jika sudah lewat 1.5 detik maka matikan
 	  if(bus_is_here == true && (HAL_GetTick() - bus_is_here_last_tick) >= 1500)
 	  {
 		  HAL_GPIO_WritePin(LED_33_GREEN_GPIO_Port, LED_33_GREEN_Pin, GPIO_PIN_SET);
@@ -271,33 +286,38 @@ int main(void)
 		  // matikan buzzer
 		  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
 
+		  // matikan notifikasi dan refresh layar
 		  bus_is_here = false;
 		  screen_refresh = true;
 	  }
+
+	  // notifikasi bus telah tiba dan masih aktif
 	  else if(bus_is_here == true)
 	  {
 		  HAL_GPIO_WritePin(LED_33_GREEN_GPIO_Port, LED_33_GREEN_Pin, GPIO_PIN_RESET);
 
 		  // nyalakan buzzer
-		  // HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_SET);
 
+		  // tampilkan notifikasi di layar
 		  Lcd_cursor(1, 6);
 		  Lcd_string("SILAHKAN");
 		  Lcd_cursor(2, 4);
 		  Lcd_string("MEMASUKI BUS");
 
+		  // hapus penumpang yang menunggu
 		  is_waiting = false;
 	  }
 
 
-	  // task for read button
+	  // task untuk baca tombol
 	  button_task();
 
 
-	  // task for check speed of bus
+	  // task untuk mengatur kecepatan bus
 	  traffic_speed = speed_check_task();
 
-	  // task for bus chaeck point
+	  // task untuk update check point
 	  bus_check_point_task(traffic_speed);
 
 
@@ -516,19 +536,24 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+// helper seting posisi bus
 void set_bus_position(uint16_t busA, uint16_t busB)
 {
+	// buffer data shift register
 	uint8_t buffer[4];
 
+	// hitung posisi bus dan masukkan ke buffer
 	buffer[0] = (busB >= 8) ? ~ (0x01 << (busB - 8)) : 0xff;
 	buffer[1] = ~ (0x01 << busB);
 
 	buffer[2] = (busA >= 8) ? ~ (0x01 << (busA - 8)) : 0xff;
 	buffer[3] = ~ (0x01 << busA);
 
+	// kirim ke check point
 	Register_send(buffer, 4);
 }
 
+// helper baca adc
 uint16_t read_adc(void)
 {
 	HAL_ADC_Start(&hadc1);
@@ -539,6 +564,7 @@ uint16_t read_adc(void)
 	return data_adc;
 }
 
+// helper mapping nilai
 int map(int value, int minSrc, int maxSrc, int minDst, int maxDst)
 {
     int rangeSrc = maxSrc - minSrc;
@@ -548,8 +574,10 @@ int map(int value, int minSrc, int maxSrc, int minDst, int maxDst)
     return scaled;
 }
 
+// task untuk screen 1
 void screen1_task(void)
 {
+	// tampilkan label
 	Lcd_cursor(0, 0);
 	Lcd_string("[Koridor VII]");
 	Lcd_cursor(0, 15);
@@ -559,6 +587,7 @@ void screen1_task(void)
 	Lcd_cursor(3, 0);
 	Lcd_string("Halte :");
 
+	// tampilkan status dan halte
 	Lcd_cursor(2, 8);
 	Lcd_string(status[check_point[1][bus_b_pos][0]]);
 	Lcd_cursor(3, 8);
@@ -567,8 +596,10 @@ void screen1_task(void)
 	Lcd_string(halte[check_point[1][bus_b_pos][1]]);
 }
 
+// task screen 2
 void screen2_task(void)
 {
+	// tampilkan label
 	Lcd_cursor(0, 0);
 	Lcd_string("[Koridor VI]");
 	Lcd_cursor(0, 15);
@@ -578,6 +609,7 @@ void screen2_task(void)
 	Lcd_cursor(3, 0);
 	Lcd_string("Halte :");
 
+	// tampilkan status dan halte
 	Lcd_cursor(2, 8);
 	Lcd_string(status[check_point[0][bus_a_pos][0]]);
 	Lcd_cursor(3, 8);
@@ -586,8 +618,10 @@ void screen2_task(void)
 	Lcd_string(halte[check_point[0][bus_a_pos][1]]);
 }
 
+// task screen 3
 void screen3_task(void)
 {
+	// tampilkan label
 	Lcd_cursor(0, 0);
 	Lcd_string("[TUNGGU BUS]");
 
@@ -596,56 +630,73 @@ void screen3_task(void)
 	Lcd_cursor(3, 0);
 	Lcd_string("Halte :");
 
+	// tampilkan menu
 	if(is_editing == false)
 	{
-	  Lcd_cursor(2, 8);
-	  Lcd_string(jurusan[jurusan_index]);
-	  Lcd_cursor(3, 8);
-	  Lcd_string(halte[halte_index]);
 
-	  if(is_waiting == false)
-	  {
-		  Lcd_cursor(cursor_index + 2, 19);
-		  Lcd_string("<");
-	  }
-	  else
-	  {
-		  Lcd_cursor(0, 14);
-		  Lcd_string("TUNGGU");
-	  }
+		// tampilkan jurusna dan halte
+		Lcd_cursor(2, 8);
+		Lcd_string(jurusan[jurusan_index]);
+		Lcd_cursor(3, 8);
+		Lcd_string(halte[halte_index]);
+
+		// tampilkan cursor jika tidak ada penumpang yang menunggu
+		if(is_waiting == false)
+		{
+			Lcd_cursor(cursor_index + 2, 19);
+			Lcd_string("<");
+		}
+
+		// tampilkan label tunggu
+		else
+		{
+			Lcd_cursor(0, 14);
+			Lcd_string("TUNGGU");
+		}
 	}
+
+	// tampilkan edit parameter
 	else
 	{
-	  if(cursor_index == 0)
-	  {
-		  Lcd_cursor(2, 8);
-		  Lcd_string("[");
-		  Lcd_string(jurusan[jurusan_index]);
-		  Lcd_cursor(2, 9 + strlen(jurusan[jurusan_index]));
-		  Lcd_string("]");
+		// cursor posisi edit jurusan
+		if(cursor_index == 0)
+		{
+			// tampilkan jurusan
+			Lcd_cursor(2, 8);
+			Lcd_string("[");
+			Lcd_string(jurusan[jurusan_index]);
+			Lcd_cursor(2, 9 + strlen(jurusan[jurusan_index]));
+			Lcd_string("]");
 
-		  Lcd_cursor(3, 8);
-		  Lcd_string(halte[halte_index]);
-	  }
-	  else
-	  {
-		  Lcd_cursor(3, 8);
-		  Lcd_string("[");
-		  Lcd_string(halte[halte_index]);
-		  Lcd_cursor(3, 9 + strlen(halte[halte_index]));
-		  Lcd_string("]");
+			// tampilkan halte
+			Lcd_cursor(3, 8);
+			Lcd_string(halte[halte_index]);
+		}
 
-		  Lcd_cursor(2, 8);
-		  Lcd_string(jurusan[jurusan_index]);
-	  }
+		// cursor posisi edit halte
+		else
+		{
+			// tampilkan halte
+			Lcd_cursor(3, 8);
+			Lcd_string("[");
+			Lcd_string(halte[halte_index]);
+			Lcd_cursor(3, 9 + strlen(halte[halte_index]));
+			Lcd_string("]");
+
+			// tampilkan jurusan
+			Lcd_cursor(2, 8);
+			Lcd_string(jurusan[jurusan_index]);
+		}
 	}
 }
 
+// task untuk membaca tombol
 void button_task(void)
 {
-	// check current pins condition
+	// sw1 ditekan
 	if(HAL_GPIO_ReadPin(SW1_GPIO_Port, SW1_Pin) == GPIO_PIN_RESET && latch_sw1 == false)
 	{
+		// atur layar yang atif
 		if(page_now <= 0)
 		{
 			page_now = 0;
@@ -658,8 +709,11 @@ void button_task(void)
 
 		latch_sw1 = true;
 	}
+
+	// sw2 ditekan
 	else if(HAL_GPIO_ReadPin(SW2_GPIO_Port, SW2_Pin) == GPIO_PIN_RESET && latch_sw2 == false)
 	{
+		// atur layar yang aktif
 		if(page_now >= 2)
 		{
 			page_now = 2;
@@ -672,19 +726,26 @@ void button_task(void)
 
 		latch_sw2 = true;
 	}
+
+	// sw3 ditekan
 	else if(HAL_GPIO_ReadPin(SW3_GPIO_Port, SW3_Pin) == GPIO_PIN_RESET && latch_sw3 == false)
 	{
+		// jika edit parameter
 		if(is_editing)
 		{
+			// edit jurusan
 			if(cursor_index == 0)
 			{
 				jurusan_index = (jurusan_index >= 1) ? 1 : jurusan_index + 1;
 			}
+			// edit halte
 			else
 			{
 				halte_index = (halte_index >= 8) ? 8 : halte_index + 1;
 			}
 		}
+
+		// atur cursor menu
 		else
 		{
 			cursor_index = 0;
@@ -693,6 +754,8 @@ void button_task(void)
 		screen_refresh = true;
 		latch_sw3 = true;
 	}
+
+	// sw4 ditekan
 	else if(HAL_GPIO_ReadPin(SW4_GPIO_Port, SW4_Pin) == GPIO_PIN_RESET && latch_sw4 == false)
 	{
 		if(is_editing)
@@ -714,8 +777,11 @@ void button_task(void)
 		screen_refresh = true;
 		latch_sw4 = true;
 	}
+
+	// sw5 ditekan
 	else if(HAL_GPIO_ReadPin(SW5_GPIO_Port, SW5_Pin) == GPIO_PIN_RESET && latch_sw5 == false)
 	{
+		// masuk atau keluar menu edit
 		if(is_waiting == false)
 		{
 			is_editing = (is_editing) ? false : true;
@@ -751,8 +817,10 @@ void button_task(void)
 
 	if(latch_sw5 == true && is_waiting == false)
 	{
+		// jika sw5 dilepas setelah 1 detik
 		if(HAL_GetTick() - btn_sw5_last_tick >= 1000)
 		{
+			// tambahkan penumpang sedang menunggu
 			is_waiting = true;
 			is_editing = false;
 
@@ -763,12 +831,13 @@ void button_task(void)
 
 void bus_check_point_task(uint16_t speed)
 {
-	// increment check point for bus B
+	// increment check point untuk bus B
 	if(HAL_GetTick() - bus_b_last_tick >= (100 / speed) * 1000)
 	{
 		bus_b_pos = (bus_b_pos >= 15) ? 0 : bus_b_pos + 1;
 		set_bus_position(bus_a_pos, bus_b_pos);
 
+		// tampilkan status label
 		if(page_now == 0)
 		{
 			Lcd_cursor(2, 8);
@@ -779,7 +848,7 @@ void bus_check_point_task(uint16_t speed)
 			Lcd_string(halte[check_point[1][bus_b_pos][1]]);
 		}
 
-		// check waiting list
+		// cek penumpang yang sedang menunggu
 		if(is_waiting == true && jurusan_index == 0 && check_point[1][bus_b_pos][0] == 1 && check_point[1][bus_b_pos][1] == halte_index)
 		{
 			bus_is_here_last_tick = HAL_GetTick();
@@ -790,7 +859,7 @@ void bus_check_point_task(uint16_t speed)
 		bus_b_last_tick = HAL_GetTick();
 	}
 
-	// increment check point for bus A -25kmph from bus B
+	// increment check point untuk bus A -25kmph dari bus B
 	if(HAL_GetTick() - bus_a_last_tick >= (125 / (float) speed) * 1000)
 	{
 		bus_a_pos = (bus_a_pos >= 15) ? 0 : bus_a_pos + 1;
@@ -806,7 +875,7 @@ void bus_check_point_task(uint16_t speed)
 			Lcd_string(halte[check_point[0][bus_a_pos][1]]);
 		}
 
-		// check waiting list
+		// cek penumpang
 		if(is_waiting == true && jurusan_index == 1 && check_point[0][bus_a_pos][0] == 1 && check_point[0][bus_a_pos][1] == halte_index)
 		{
 			bus_is_here_last_tick = HAL_GetTick();
@@ -818,6 +887,7 @@ void bus_check_point_task(uint16_t speed)
 	}
 }
 
+// helper atur kecepatan bus
 uint8_t speed_check_task(void)
 {
 	uint16_t data_adc = read_adc();
@@ -865,4 +935,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
